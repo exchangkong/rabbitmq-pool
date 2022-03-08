@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package pool;
+
+option go_package = "pb";
+
+
+service PoolService {
+    rpc Pushlish(PublishReuqest) returns (PublishResponse);
+}
+
+message PublishReuqest {
+    string  queue_name = 1;
+    string  declare_exchange = 2;
+    int32   delay = 3;
+    string  payload = 4;
+}
+message PublishResponse {
+    int32 status = 1;
+}

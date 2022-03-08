@@ -1,0 +1,20 @@
+
+pool_option:
+  username: "test"
+  password: "1234qwer"
+  #host: "172.16.18.8"
+  host: "127.0.0.1"
+  port: 5672
+  vhost: "hashrate"
+  connect_num: 5
+  channel_num: 5
+  retry_count: 5 #尝试重试5次push消息
+  time_out: 5 #建议设置最小3秒
+  max_channel_num: 200 #全局可创建最多channel数量
+
+grpc:
+  host: '0.0.0.0'
+  port: 7789
+  redis:
+    host: 'localhost'
+    port: 6379
