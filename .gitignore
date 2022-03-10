@@ -1,2 +1,4 @@
 vendor
 channel
+.idea/
+*.swp

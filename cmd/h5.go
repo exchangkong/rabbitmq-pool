@@ -17,8 +17,11 @@ package cmd
 
 import (
 	"fmt"
-
 	"github.com/spf13/cobra"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 // h5Cmd represents the h5 command
@@ -33,6 +36,20 @@ This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("h5 called")
+
+		http.HandleFunc("/publish", func(writer http.ResponseWriter, request *http.Request) {
+			go func() {
+				writer.WriteHeader(200)
+				writer.Write([]byte("阿斯顿发斯蒂芬111"))
+			}()
+
+		})
+
+		http.ListenAndServe(":8082", nil)
+		quit := make(chan os.Signal)
+		signal.Notify(quit, os.Interrupt, os.Kill, syscall.SIGTERM)
+
+		<-quit
 	},
 }
 

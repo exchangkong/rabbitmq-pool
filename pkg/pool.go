@@ -15,7 +15,6 @@ type Content struct {
 	ContentType     string
 	Body            string
 	Delay           int32
-
 }
 
 type Exchange struct {
@@ -249,7 +248,7 @@ func (s *PoolService) getChannel() (*channel, error) {
 	//没有空闲channel且当前channel数 大于阈值等待有空闲channel
 	if len(s.idleChannel) < 1 {
 		for {
-			time.Sleep(time.Millisecond * 20)
+			time.Sleep(time.Microsecond * 10)
 			if len(s.idleChannel) > 0 {
 				break;
 			}
@@ -276,7 +275,6 @@ func (s *PoolService) backChannel(channel *channel) {
 
 	s.buysChannel = util.DeleteSlice(s.buysChannel, channel.id, "back channel buysChannel")
 
-
 	if channel.durable == false { //如果是临时连接用完关闭 并踢出全局
 		_ = channel.ch.Close()
 		if s.connections[channel.connectId].durable == false {
@@ -290,30 +288,26 @@ func (s *PoolService) backChannel(channel *channel) {
 
 func (s *PoolService) channelClose(channel *channel) {
 	for {
-		err := <-channel.notifyClose
+		_ = <-channel.notifyClose
 			s.mutex.Lock()
 			channel.isClose = true
 			delete(s.channels, channel.id)
 			util.DeleteSlice(s.idleChannel, channel.id, "channel close idleChannel")
 
 			s.mutex.Unlock()
-			failOnError(err, "rabbitmq notify channel close")
 			return
 	}
 }
 
 func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string, content *Content) (message interface{}, err error) {
-	/*
 	defer func() {
 		var errStr string
 		if p := recover(); p != nil {
 			errStr = fmt.Sprintf("internal error: %v\n", p)
-			fmt.Println(errStr)
-			err = errors.New(errStr)
+			failOnError(errors.New(errStr), "publish recover")
 			return
 		}
 	}()
-	 */
 
 	channel, err := s.getChannel()
 
@@ -368,7 +362,7 @@ func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string,
 		if err != nil {
 			if retry <= s.RetryCount { //消息推送失败 重试次数
 				retry++
-				time.Sleep(time.Millisecond * 200)
+				time.Sleep(time.Millisecond * 50)
 				failOnError(err, "pool publish fail continue msg: ")
 				continue
 			} else {

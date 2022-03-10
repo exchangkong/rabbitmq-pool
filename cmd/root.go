@@ -83,7 +83,7 @@ func initConfig() {
 
 		// Search config in home directory with name ".rabbitmq-channel" (without extension).
 		viper.AddConfigPath(home)
-		viper.SetConfigName(".rabbitmq-channel")
+		viper.SetConfigName("config")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match

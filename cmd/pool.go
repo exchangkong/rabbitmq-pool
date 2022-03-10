@@ -54,45 +54,34 @@ to quickly create a Cobra application.`,
 		laravelPool := pool.NewLaravelPoolService(poolService)
 
 		fmt.Println("pool called")
-		//url := "amqp://guest:guest@127.0.0.1:5672/"
-		//poolService := pool.NewService(opts.PoolOption)
 
-		//go func() {
-			http.HandleFunc("/publish", func(writer http.ResponseWriter, request *http.Request) {
-				values := request.URL.Query()
-				data := values.Get("data")
-				delay, _ := strconv.ParseInt(values.Get("delay"), 10, 32)
+		http.HandleFunc("/publish", func(writer http.ResponseWriter, request *http.Request) {
+			values := request.URL.Query()
+			data := values.Get("data")
+			delay, _ := strconv.ParseInt(values.Get("delay"), 10, 32)
 
-				fmt.Println("delay: ", delay)
-				content := &pool.Content{
-					DeclareExchange: true,
-					ContentType: "text/plain",
-					Body: data,
-					Delay: int32(delay),
-				}
+			content := &pool.Content{
+				DeclareExchange: true,
+				ContentType: "text/plain",
+				Body: data,
+				Delay: int32(delay),
+			}
 
-				numbers, _ := strconv.ParseInt(values.Get("num"), 10, 32)
+			numbers, _ := strconv.ParseInt(values.Get("num"), 10, 32)
 
-				for i := int64(1); i <= numbers; i++ {
-					go func() {
+			for i := int64(1); i <= numbers; i++ {
+				_, _ =laravelPool.Publish("hello", content)
+			}
 
-						_, _ =laravelPool.Publish("hello", content)
-					}()
-				}
-
-				writer.WriteHeader(200)
-				writer.Write([]byte("阿斯顿发斯蒂芬"))
-
-				fmt.Fprintln(writer, "test")
-			})
-			http.ListenAndServe(":8080", nil)
-		//}()
+			writer.WriteHeader(200)
+			writer.Write([]byte("阿斯顿发斯蒂芬"))
+		})
+		http.ListenAndServe(":8080", nil)
 
 		quit := make(chan os.Signal)
 		signal.Notify(quit, os.Interrupt, os.Kill, syscall.SIGTERM)
 
 		<-quit
-
 	},
 }
 
