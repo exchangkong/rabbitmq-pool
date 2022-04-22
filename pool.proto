@@ -1,11 +1,9 @@
 syntax = "proto3";
 
-package pool;
-
-option go_package = "pb";
+option go_package = "./pb";
 
 
-service PoolService {
+service RabbitmqPoolService {
     rpc Pushlish(PublishReuqest) returns (PublishResponse);
 }
 
@@ -17,4 +15,5 @@ message PublishReuqest {
 }
 message PublishResponse {
     int32 status = 1;
+    string message = 2;
 }

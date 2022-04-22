@@ -16,9 +16,10 @@ limitations under the License.
 package cmd
 
 import (
-	"fmt"
-
+	"git.yongche.com/rabbitmq-channel/pb"
+	pool "git.yongche.com/rabbitmq-channel/pkg"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
 )
 
 // grpcCmd represents the grpc command
@@ -32,7 +33,12 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("grpc called")
+		opts := new(ApplicationOptions)
+		opts.Load()
+		boot := newBootStrap(opts)
+		laravelPool := pool.NewLaravelPoolService(boot.PoolService)
+		grpcServer := grpc.NewServer()
+		pb.RegisterRabbitmqPoolServiceServer(grpcServer, laravelPool)
 	},
 }
 

@@ -1,4 +1,5 @@
 vendor
 channel
-.idea/
+.idea/*
 *.swp
+go.sum

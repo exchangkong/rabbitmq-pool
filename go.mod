@@ -3,15 +3,16 @@ module git.yongche.com/rabbitmq-channel
 go 1.17
 
 require (
+	github.com/fsnotify/fsnotify v1.5.1
 	github.com/golang/protobuf v1.5.2
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/viper v1.9.0
 	github.com/streadway/amqp v1.0.0
+	google.golang.org/grpc v1.40.0
 )
 
 require (
-	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/magiconair/properties v1.8.5 // indirect
@@ -29,7 +30,8 @@ require (
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.9 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
-	google.golang.org/protobuf v1.27.1 // indirect
+	google.golang.org/genproto v0.0.0-20210828152312-66f60bf46e71 // indirect
+	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/ini.v1 v1.63.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

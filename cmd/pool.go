@@ -21,6 +21,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/streadway/amqp"
 	"net/http"
 	"os"
 	"os/signal"
@@ -60,17 +61,22 @@ to quickly create a Cobra application.`,
 			data := values.Get("data")
 			delay, _ := strconv.ParseInt(values.Get("delay"), 10, 32)
 
+			publising := &amqp.Publishing{
+				ContentType: "text/plain",
+				Body:        []byte(data),
+			}
 			content := &pool.Content{
 				DeclareExchange: true,
-				ContentType: "text/plain",
-				Body: data,
-				Delay: int32(delay),
+				Delay:           int32(delay),
+				Publishing:      publising,
 			}
 
 			numbers, _ := strconv.ParseInt(values.Get("num"), 10, 32)
 
 			for i := int64(1); i <= numbers; i++ {
-				_, _ =laravelPool.Publish("hello", content)
+				go func() {
+					_, _ = laravelPool.Publish("hello", content)
+				}()
 			}
 
 			writer.WriteHeader(200)
@@ -98,4 +104,3 @@ func init() {
 	// is called directly, e.g.:
 	// poolCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
-

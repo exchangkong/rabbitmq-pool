@@ -3,12 +3,14 @@ package pool
 import (
 	"bytes"
 	"fmt"
+	"git.yongche.com/rabbitmq-channel/pb"
 	"github.com/streadway/amqp"
 	"strconv"
 )
 
 type LaravelPool struct {
 	PoolService *PoolService
+	pb.UnimplementedRabbitmqPoolServiceServer
 }
 
 func NewLaravelPoolService(poolService *PoolService) *LaravelPool {
@@ -42,7 +44,7 @@ func (l *LaravelPool) Publish(queueName string, content *Content) (msg interface
 		buffer.WriteString(".")
 		buffer.WriteString("delay")
 		buffer.WriteString(".")
-		buffer.WriteString(strconv.FormatInt(int64(content.Delay * 1000), 10))
+		buffer.WriteString(strconv.FormatInt(int64(content.Delay*1000), 10))
 
 		queueName = buffer.String() //延时队列要声明新的延时队列名
 		routeKey = queueName
@@ -61,14 +63,13 @@ func (l *LaravelPool) Publish(queueName string, content *Content) (msg interface
 	}
 
 	exchange := &Exchange{
-		Name:       exchangeName,
-		Type:       "direct",
-		Durable:    true,
-		AutoDel:    false,
-		Internal:   false,
-		NoWait:     false,
+		Name:     exchangeName,
+		Type:     "direct",
+		Durable:  true,
+		AutoDel:  false,
+		Internal: false,
+		NoWait:   false,
 	}
-
 
 	msg, err = l.PoolService.Publish(queue, exchange, routeKey, content)
 	return

@@ -12,28 +12,26 @@ import (
 
 type Content struct {
 	DeclareExchange bool
-	ContentType     string
-	Body            string
 	Delay           int32
+	Publishing      *amqp.Publishing
 }
 
 type Exchange struct {
-	Name        string
-	Type        string
-	Durable     bool
-	AutoDel     bool
-	Internal    bool
-	NoWait      bool
-
+	Name     string
+	Type     string
+	Durable  bool
+	AutoDel  bool
+	Internal bool
+	NoWait   bool
 }
 
 type Queue struct {
-	Name        string
-	Durable     bool
-	AutoDelete  bool
-	Exclusive   bool
-	NoWait      bool
-	Args        map[string]interface{}
+	Name       string
+	Durable    bool
+	AutoDelete bool
+	Exclusive  bool
+	NoWait     bool
+	Args       map[string]interface{}
 }
 
 type channel struct {
@@ -48,54 +46,54 @@ type channel struct {
 }
 
 type connection struct {
-	channelNum  int //记录同一个连接channel数量
-	connect      *amqp.Connection
-	id          int //连接唯一标示
-	durable     bool //用来区分创建的连接是池连接还是临时连接
+	channelNum int //记录同一个连接channel数量
+	connect    *amqp.Connection
+	id         int  //连接唯一标示
+	durable    bool //用来区分创建的连接是池连接还是临时连接
 }
 
 type Options struct {
-	ConnectNum  	int     `mapstructure:"connect_num"`//配置connection数
-	ChannelNum  	int     `mapstructure:"channel_num"`//配置channel数
-	Username    	string  `mapstructure:"username"`
-	Password    	string  `mapstructure:"password"`
-	Host        	string  `mapstructure:"host"`
-	Port        	int     `mapstructure:"port"`
-	Vhost       	string  `mapstructure:"vhost"`
-	TimeOut     	int32   `mapstructure:"time_out"`
-	RetryCount  	int     `mapstructure:"retry_count"`
-	MaxChannelNum   int     `mapstructure:"max_channel_num"` //channel最大数量
+	ConnectNum    int    `mapstructure:"connect_num"` //配置connection数
+	ChannelNum    int    `mapstructure:"channel_num"` //配置channel数
+	Username      string `mapstructure:"username"`
+	Password      string `mapstructure:"password"`
+	Host          string `mapstructure:"host"`
+	Port          int    `mapstructure:"port"`
+	Vhost         string `mapstructure:"vhost"`
+	TimeOut       int32  `mapstructure:"time_out"`
+	RetryCount    int    `mapstructure:"retry_count"`
+	MaxChannelNum int    `mapstructure:"max_channel_num"` //channel最大数量
 }
 
 type PoolService struct {
-	AmqpUrl     string
-	connections map[int]*connection
-	channels    map[int]*channel
-	idleChannel []int
-	buysChannel []int
-	mutex       *sync.Mutex
+	AmqpUrl      string
+	connections  map[int]*connection
+	channels     map[int]*channel
+	idleChannel  []int
+	buysChannel  []int
+	mutex        *sync.Mutex
 	channelMaxId int
 	connectMaxId int
-	chanMutex   *sync.Mutex
+	chanMutex    *sync.Mutex
 	Options
 }
 
 func NewPoolService(options *Options) *PoolService {
 	service := &PoolService{
 		/*
-		ConnectNum: connectNum,
-		ChannelNum: channelNum,
-		AmqpUrl:    amqpUrl,
-		 */
-		connections: make(map[int]*connection),
-		channels: make(map[int]*channel),
-		idleChannel: []int{},
-		buysChannel: []int{},
-		mutex: new(sync.Mutex),
+			ConnectNum: connectNum,
+			ChannelNum: channelNum,
+			AmqpUrl:    amqpUrl,
+		*/
+		connections:  make(map[int]*connection),
+		channels:     make(map[int]*channel),
+		idleChannel:  []int{},
+		buysChannel:  []int{},
+		mutex:        new(sync.Mutex),
 		channelMaxId: 0,
 		connectMaxId: 0,
-		chanMutex: new(sync.Mutex),
-		Options: *options,
+		chanMutex:    new(sync.Mutex),
+		Options:      *options,
 	}
 
 	service.init()
@@ -106,8 +104,6 @@ func (s *PoolService) BuildURL() string {
 	return fmt.Sprintf("amqp://%s:%s@%s:%d/%s",
 		s.Username, s.Password, s.Host, s.Port, s.Vhost)
 }
-
-
 
 func (s *PoolService) init() {
 	s.AmqpUrl = s.BuildURL()
@@ -131,6 +127,7 @@ func failOnError(err error, msg string) {
 		log.Printf("%s: %s", msg, err)
 	}
 }
+
 /**
  * connection、channel健康检查
  */
@@ -154,9 +151,9 @@ func (s *PoolService) createConnection(durable bool) (*connection, error) {
 	connection.connect = conn
 	connection.durable = durable
 	/*
-	if !durable { //如果创建为连接池创建连接，则直接返回不需要保存，用完销毁
-		return connection, nil
-	}
+		if !durable { //如果创建为连接池创建连接，则直接返回不需要保存，用完销毁
+			return connection, nil
+		}
 	*/
 
 	s.mutex.Lock()
@@ -175,8 +172,8 @@ func (s *PoolService) createChannel(connect *connection, durable bool) (*channel
 	defer s.mutex.Unlock()
 	var cha = new(channel)
 
-	cha.notifyClose     = make(chan *amqp.Error)
-	cha.notifyConfirm   = make(chan amqp.Confirmation)
+	cha.notifyClose = make(chan *amqp.Error)
+	cha.notifyConfirm = make(chan amqp.Confirmation)
 	//cha.notifyReturn    = make(chan amqp.Return)
 
 	channel, err := connect.connect.Channel()
@@ -243,6 +240,7 @@ func (s *PoolService) getChannel() (*channel, error) {
 			failOnError(err, "get channel createChannel fail")
 			return nil, err
 		}
+		fmt.Println("getChannel create channel: ", connection.channelNum)
 	}
 
 	//没有空闲channel且当前channel数 大于阈值等待有空闲channel
@@ -250,7 +248,7 @@ func (s *PoolService) getChannel() (*channel, error) {
 		for {
 			time.Sleep(time.Microsecond * 10)
 			if len(s.idleChannel) > 0 {
-				break;
+				break
 			}
 		}
 	}
@@ -260,7 +258,7 @@ func (s *PoolService) getChannel() (*channel, error) {
 
 	channelId := s.idleChannel[0]
 	s.buysChannel = append(s.buysChannel, channelId)
-	s.idleChannel = util.DeleteSlice(s.idleChannel, channelId, "get channel idleChannel")
+	s.idleChannel = util.DeleteSlice(s.idleChannel, channelId)
 
 	return s.channels[channelId], nil
 }
@@ -273,7 +271,7 @@ func (s *PoolService) backChannel(channel *channel) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	s.buysChannel = util.DeleteSlice(s.buysChannel, channel.id, "back channel buysChannel")
+	s.buysChannel = util.DeleteSlice(s.buysChannel, channel.id)
 
 	if channel.durable == false { //如果是临时连接用完关闭 并踢出全局
 		_ = channel.ch.Close()
@@ -289,13 +287,13 @@ func (s *PoolService) backChannel(channel *channel) {
 func (s *PoolService) channelClose(channel *channel) {
 	for {
 		_ = <-channel.notifyClose
-			s.mutex.Lock()
-			channel.isClose = true
-			delete(s.channels, channel.id)
-			util.DeleteSlice(s.idleChannel, channel.id, "channel close idleChannel")
+		s.mutex.Lock()
+		channel.isClose = true
+		delete(s.channels, channel.id)
+		util.DeleteSlice(s.idleChannel, channel.id)
 
-			s.mutex.Unlock()
-			return
+		s.mutex.Unlock()
+		return
 	}
 }
 
@@ -348,16 +346,14 @@ func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string,
 		s.TimeOut = 3
 	}
 
-	for  {
+	for {
 		err = channel.ch.Publish(
-			exchangeName,     // exchange
-			routeKey, // routing key
-			true,   // mandatory
-			false,  // immediate
-			amqp.Publishing{
-				ContentType: content.ContentType,
-				Body:        []byte(content.Body),
-			})
+			exchangeName, // exchange
+			routeKey,     // routing key
+			true,         // mandatory
+			false,        // immediate
+			*content.Publishing,
+		)
 
 		if err != nil {
 			if retry <= s.RetryCount { //消息推送失败 重试次数
@@ -383,7 +379,7 @@ func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string,
 			if confirm.Ack {
 				return "success", nil
 			}
-			return nil,errors.New("publish noAck")
+			return nil, errors.New("publish noAck")
 
 		case <-time.After(time.Duration(s.TimeOut) * time.Second):
 			return nil, errors.New("time out ")
@@ -393,26 +389,26 @@ func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string,
 
 func (s *PoolService) DeclareExchange(channel *amqp.Channel, exchange *Exchange) error {
 	err := channel.ExchangeDeclare(
-		exchange.Name,   // name
-		exchange.Type, // type
-		exchange.Durable,     // durable
-		exchange.AutoDel,    // auto-deleted
-		exchange.Internal,    // internal
-		exchange.NoWait,    // no-wait
-		nil,      // arguments
+		exchange.Name,     // name
+		exchange.Type,     // type
+		exchange.Durable,  // durable
+		exchange.AutoDel,  // auto-deleted
+		exchange.Internal, // internal
+		exchange.NoWait,   // no-wait
+		nil,               // arguments
 	)
 
 	return err
 }
 
-func (s *PoolService) DeclareQueue(channel *amqp.Channel, queue *Queue) (amqp.Queue, error){
+func (s *PoolService) DeclareQueue(channel *amqp.Channel, queue *Queue) (amqp.Queue, error) {
 	q, err := channel.QueueDeclare(
-		queue.Name, // name
-		queue.Durable,   // durable
-		queue.AutoDelete,   // delete when unused
-		queue.Exclusive,   // exclusive
-		queue.NoWait,   // no-wait
-		queue.Args,     // arguments
+		queue.Name,       // name
+		queue.Durable,    // durable
+		queue.AutoDelete, // delete when unused
+		queue.Exclusive,  // exclusive
+		queue.NoWait,     // no-wait
+		queue.Args,       // arguments
 	)
 
 	if err != nil {
@@ -420,12 +416,12 @@ func (s *PoolService) DeclareQueue(channel *amqp.Channel, queue *Queue) (amqp.Qu
 		return q, err
 	}
 
-	return  q, nil
+	return q, nil
 }
 
 func (s *PoolService) queueBind(channel *amqp.Channel, queueName string, exchangeName string, routeKey string) error {
 	err := channel.QueueBind(
-		queueName, // queue name
+		queueName,    // queue name
 		routeKey,     // routing key
 		exchangeName, // exchange
 		false,
