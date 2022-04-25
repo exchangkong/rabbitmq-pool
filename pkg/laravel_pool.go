@@ -2,7 +2,6 @@ package pool
 
 import (
 	"bytes"
-	"fmt"
 	"git.yongche.com/rabbitmq-channel/pb"
 	"github.com/streadway/amqp"
 	"strconv"
@@ -20,13 +19,14 @@ func NewLaravelPoolService(poolService *PoolService) *LaravelPool {
 }
 
 func (l *LaravelPool) Publish(queueName string, content *Content) (msg interface{}, err error) {
-
-	defer func() {
-		if p := recover(); p != nil {
-			fmt.Printf("laravel publish internal error: %v\n", p)
-			return
-		}
-	}()
+	/*
+		defer func() {
+			if p := recover(); p != nil {
+				fmt.Printf("laravel publish internal error: %v\n", p)
+				return
+			}
+		}()
+	*/
 
 	exchangeName := queueName
 	originalQueueName := queueName

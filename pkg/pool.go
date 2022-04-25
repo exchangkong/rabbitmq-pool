@@ -40,16 +40,16 @@ type channel struct {
 	notifyClose   chan *amqp.Error
 	notifyConfirm chan amqp.Confirmation
 	notifyReturn  chan amqp.Return
-	isClose       bool
 	id            int
 	durable       bool
 }
 
 type connection struct {
-	channelNum int //记录同一个连接channel数量
-	connect    *amqp.Connection
-	id         int  //连接唯一标示
-	durable    bool //用来区分创建的连接是池连接还是临时连接
+	channelNum  int //记录同一个连接channel数量
+	connect     *amqp.Connection
+	id          int  //连接唯一标示
+	durable     bool //用来区分创建的连接是池连接还是临时连接
+	notifyClose chan *amqp.Error
 }
 
 type Options struct {
@@ -142,19 +142,10 @@ func (s *PoolService) poolKeepCheck() {
 }
 
 func (s *PoolService) createConnection(durable bool) (*connection, error) {
-	connection := new(connection)
-	conn, err := amqp.Dial(s.AmqpUrl)
+	connection, err := s.buildConnection(durable)
 	if err != nil {
 		return nil, err
 	}
-
-	connection.connect = conn
-	connection.durable = durable
-	/*
-		if !durable { //如果创建为连接池创建连接，则直接返回不需要保存，用完销毁
-			return connection, nil
-		}
-	*/
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -166,17 +157,48 @@ func (s *PoolService) createConnection(durable bool) (*connection, error) {
 	return connection, nil
 }
 
+func (s *PoolService) buildConnection(durable bool) (*connection, error) {
+	connection := new(connection)
+	connection.notifyClose = make(chan *amqp.Error)
+	conn, err := amqp.Dial(s.AmqpUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	conn.NotifyClose(connection.notifyClose)
+	connection.connect = conn
+	connection.durable = durable
+	go s.connectionClose(connection)
+	return connection, nil
+}
+
 func (s *PoolService) createChannel(connect *connection, durable bool) (*channel, error) {
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	var cha = new(channel)
 
+	cha.connectId = connect.id
+	cha.durable = durable
+
+	connect.channelNum++ //当前连接channel+1
+	s.channelMaxId++
+	cha.id = s.channelMaxId
+	cha, err := s.buildChannel(connect, cha)
+	if err != nil {
+		return nil, err
+	}
+
+	s.channels[cha.id] = cha
+	s.idleChannel = append(s.idleChannel, cha.id)
+	return s.channels[cha.id], nil
+}
+
+func (s *PoolService) buildChannel(connection *connection, cha *channel) (*channel, error) {
 	cha.notifyClose = make(chan *amqp.Error)
 	cha.notifyConfirm = make(chan amqp.Confirmation)
-	//cha.notifyReturn    = make(chan amqp.Return)
 
-	channel, err := connect.connect.Channel()
+	channel, err := connection.connect.Channel()
 	if err != nil {
 		failOnError(err, "create channel fail")
 		return nil, err
@@ -190,20 +212,10 @@ func (s *PoolService) createChannel(connect *connection, durable bool) (*channel
 
 	channel.NotifyClose(cha.notifyClose)
 	channel.NotifyPublish(cha.notifyConfirm)
-	//channel.NotifyReturn(cha.notifyReturn)
-
-	cha.connectId = connect.id
-	cha.ch = channel
-	cha.durable = durable
-
-	connect.channelNum++ //当前连接channel+1
-	s.channelMaxId++
-	cha.id = s.channelMaxId
-	s.channels[cha.id] = cha
 	go s.channelClose(cha)
 
-	s.idleChannel = append(s.idleChannel, cha.id)
-	return s.channels[cha.id], nil
+	cha.ch = channel
+	return cha, nil
 }
 
 func (s *PoolService) getChannel() (*channel, error) {
@@ -228,7 +240,7 @@ func (s *PoolService) getChannel() (*channel, error) {
 			}
 		}
 
-		if connection.id == 0 {
+		if connection.id == 0 || connection.durable == false {
 			connection, err = s.createConnection(false)
 			if err != nil {
 				failOnError(err, "get channel createConnection fail")
@@ -240,17 +252,7 @@ func (s *PoolService) getChannel() (*channel, error) {
 			failOnError(err, "get channel createChannel fail")
 			return nil, err
 		}
-		fmt.Println("getChannel create channel: ", connection.channelNum)
-	}
-
-	//没有空闲channel且当前channel数 大于阈值等待有空闲channel
-	if len(s.idleChannel) < 1 {
-		for {
-			time.Sleep(time.Microsecond * 10)
-			if len(s.idleChannel) > 0 {
-				break
-			}
-		}
+		//fmt.Println("getChannel create channel: ", connection.channelNum)
 	}
 
 	s.mutex.Lock()
@@ -275,37 +277,76 @@ func (s *PoolService) backChannel(channel *channel) {
 
 	if channel.durable == false { //如果是临时连接用完关闭 并踢出全局
 		_ = channel.ch.Close()
-		if s.connections[channel.connectId].durable == false {
+		if _, ok := s.connections[channel.connectId]; ok && s.connections[channel.connectId].durable == false {
 			_ = s.connections[channel.connectId].connect.Close()
 			delete(s.connections, channel.connectId)
 		}
 	} else {
 		s.idleChannel = append(s.idleChannel, channel.id)
+		channel.ch.Close()
 	}
 }
 
 func (s *PoolService) channelClose(channel *channel) {
 	for {
-		_ = <-channel.notifyClose
+		err := <-channel.notifyClose
 		s.mutex.Lock()
-		channel.isClose = true
+		defer s.mutex.Unlock()
+		//如果是持久的channel关闭后尝试重建channel
+		if _, ok := s.connections[channel.connectId]; ok && channel.durable && s.connections[channel.connectId].connect.IsClosed() == false {
+			_, channelErr := s.buildChannel(s.connections[channel.connectId], channel)
+			if channelErr == nil {
+				return
+			}
+		}
+
 		delete(s.channels, channel.id)
 		util.DeleteSlice(s.idleChannel, channel.id)
+		if channel.durable == false || err == nil {
+			return
+		}
 
-		s.mutex.Unlock()
+		fmt.Printf("channel close channelId: %d  connectId: %d errCode: %d errReason: %s errSever: %t errRecover: %t \n",
+			channel.id,
+			s.connections[channel.connectId].id,
+			err.Code,
+			err.Reason,
+			err.Server,
+			err.Recover,
+		)
+
+		return
+	}
+}
+
+func (s *PoolService) connectionClose(connection *connection) {
+	for {
+		err := <-connection.notifyClose
+		if err == nil {
+			return
+		}
+		fmt.Printf("connection close Id: %d errCode: %d errReason: %s errSever: %t errRecover: %t \n",
+			connection.id,
+			err.Code,
+			err.Reason,
+			err.Server,
+			err.Recover,
+		)
 		return
 	}
 }
 
 func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string, content *Content) (message interface{}, err error) {
-	defer func() {
-		var errStr string
-		if p := recover(); p != nil {
-			errStr = fmt.Sprintf("internal error: %v\n", p)
-			failOnError(errors.New(errStr), "publish recover")
-			return
-		}
-	}()
+	/*
+		defer func() {
+			var errStr string
+			if p := recover(); p != nil {
+				errStr = fmt.Sprintf("internal error: %v\n", p)
+				failOnError(errors.New(errStr), "publish recover")
+				return
+			}
+		}()
+	*/
 
 	channel, err := s.getChannel()
 
