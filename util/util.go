@@ -1,5 +1,7 @@
 package util
 
+import "log"
+
 func DeleteSlice(arr []int, key int) []int {
 	for i, val := range arr {
 		if val == key {
@@ -7,4 +9,10 @@ func DeleteSlice(arr []int, key int) []int {
 		}
 	}
 	return arr
+}
+
+func FailOnError(err error, msg string) {
+	if err != nil {
+		log.Printf("%s: %s", msg, err)
+	}
 }

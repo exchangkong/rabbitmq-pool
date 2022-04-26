@@ -3,8 +3,10 @@ package pool
 import (
 	"bytes"
 	"git.yongche.com/rabbitmq-channel/pb"
+	"git.yongche.com/rabbitmq-channel/util"
 	"github.com/streadway/amqp"
 	"strconv"
+	"time"
 )
 
 type LaravelPool struct {
@@ -71,6 +73,20 @@ func (l *LaravelPool) Publish(queueName string, content *Content) (msg interface
 		NoWait:   false,
 	}
 
-	msg, err = l.PoolService.Publish(queue, exchange, routeKey, content)
+	retry := 1
+
+	for {
+		msg, err = l.PoolService.Publish(queue, exchange, routeKey, content)
+		if err == nil {
+			break
+		}
+
+		retry++
+		if retry >= l.PoolService.RetryCount {
+			util.FailOnError(err, "pkg php pool retry")
+			break
+		}
+		time.Sleep(time.Millisecond * 30)
+	}
 	return
 }

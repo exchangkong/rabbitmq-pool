@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"git.yongche.com/rabbitmq-channel/util"
 	"github.com/streadway/amqp"
-	"log"
 	"sync"
 	"time"
 )
@@ -70,7 +69,6 @@ type PoolService struct {
 	connections  map[int]*connection
 	channels     map[int]*channel
 	idleChannel  []int
-	buysChannel  []int
 	mutex        *sync.Mutex
 	channelMaxId int
 	connectMaxId int
@@ -88,7 +86,6 @@ func NewPoolService(options *Options) *PoolService {
 		connections:  make(map[int]*connection),
 		channels:     make(map[int]*channel),
 		idleChannel:  []int{},
-		buysChannel:  []int{},
 		mutex:        new(sync.Mutex),
 		channelMaxId: 0,
 		connectMaxId: 0,
@@ -110,21 +107,15 @@ func (s *PoolService) init() {
 	for i := 1; i <= s.ConnectNum; i++ {
 		connection, err := s.createConnection(true)
 		if err != nil {
-			failOnError(err, "connection fail quit init")
+			util.FailOnError(err, "connection fail quit init")
 			return
 		}
 		for j := 1; j <= s.ChannelNum; j++ {
 			_, err := s.createChannel(connection, true)
 			if err != nil {
-				failOnError(err, "channel create fail quit init")
+				util.FailOnError(err, "channel create fail quit init")
 			}
 		}
-	}
-}
-
-func failOnError(err error, msg string) {
-	if err != nil {
-		log.Printf("%s: %s", msg, err)
 	}
 }
 
@@ -200,13 +191,13 @@ func (s *PoolService) buildChannel(connection *connection, cha *channel) (*chann
 
 	channel, err := connection.connect.Channel()
 	if err != nil {
-		failOnError(err, "create channel fail")
+		util.FailOnError(err, "create channel fail")
 		return nil, err
 	}
 
 	err = channel.Confirm(false)
 	if err != nil {
-		failOnError(err, "createChannel confirm")
+		util.FailOnError(err, "createChannel confirm")
 		return nil, err
 	}
 
@@ -248,13 +239,13 @@ func (s *PoolService) getChannel() (*channel, error) {
 		if connection.id == 0 || connection.durable == false {
 			connection, err = s.createConnection(false)
 			if err != nil {
-				failOnError(err, "get channel createConnection fail")
+				util.FailOnError(err, "get channel createConnection fail")
 				return nil, err
 			}
 		}
 		_, err = s.createChannel(connection, false) //idleChannel 为空创建临时 channel
 		if err != nil {
-			failOnError(err, "get channel createChannel fail")
+			util.FailOnError(err, "get channel createChannel fail")
 			return nil, err
 		}
 		//fmt.Println("getChannel create channel: ", connection.channelNum)
@@ -263,9 +254,8 @@ func (s *PoolService) getChannel() (*channel, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	//fmt.Println("get channel idleChannel 2: ", s.idleChannel)
 	channelId := s.idleChannel[0]
-	s.buysChannel = append(s.buysChannel, channelId)
+	fmt.Println("get channel idleChannel 2: ", s.idleChannel, " id: ", channelId)
 	s.idleChannel = util.DeleteSlice(s.idleChannel, channelId)
 
 	return s.channels[channelId], nil
@@ -281,12 +271,10 @@ func (s *PoolService) backChannel(channel *channel) {
 	//fmt.Println("back channel waiting lock")
 	defer s.mutex.Unlock()
 
-	s.buysChannel = util.DeleteSlice(s.buysChannel, channel.id)
-
 	if channel.durable == false { //如果是临时连接用完关闭 并踢出全局
 		_ = channel.ch.Close()
 		if _, ok := s.connections[channel.connectId]; ok && s.connections[channel.connectId].durable == false {
-			delete(s.connections, channel.connectId)
+			//delete(s.connections, channel.connectId)
 			_ = s.connections[channel.connectId].connect.Close()
 		}
 	} else {
@@ -297,9 +285,7 @@ func (s *PoolService) backChannel(channel *channel) {
 func (s *PoolService) channelClose(channel *channel) {
 	for {
 		err := <-channel.notifyClose
-		//fmt.Println("channel close start lock")
 		s.mutex.Lock()
-		//fmt.Println("channel close wating lock")
 		defer s.mutex.Unlock()
 		if channel.durable == false {
 			return
@@ -321,7 +307,7 @@ func (s *PoolService) channelClose(channel *channel) {
 
 		fmt.Printf("channel close channelId: %d  connectId: %d errCode: %d errReason: %s errSever: %t errRecover: %t \n",
 			channel.id,
-			s.connections[channel.connectId].id,
+			channel.connectId,
 			err.Code,
 			err.Reason,
 			err.Server,
@@ -335,8 +321,7 @@ func (s *PoolService) channelClose(channel *channel) {
 func (s *PoolService) connectionClose(connection *connection) {
 	for {
 		err := <-connection.notifyClose
-		s.mutex.Lock()
-		defer s.mutex.Unlock()
+		delete(s.connections, connection.id)
 		if connection.durable == false {
 			return
 		}
@@ -349,43 +334,40 @@ func (s *PoolService) connectionClose(connection *connection) {
 				err.Recover,
 			)
 		}
-		delete(s.connections, connection.id)
 		//如果是持久连接被关闭尝试重建
 		newConnect, connectErr := s.buildConnection(true)
 		//fmt.Println("connection close recover start id: ", connection.id)
-		if connectErr == nil {
-			newConnect.id = connection.id
-			//fmt.Println("connection close recover success id: ", connection.id)
-			for i := 1; i <= s.ChannelNum; i++ {
-				_, chanErr := s.createChannel(newConnect, true)
-				if chanErr != nil {
-					fmt.Println("connection close create channel fail err: ", chanErr)
-					return
-				}
-			}
-			s.connections[connection.id] = newConnect
+		if connectErr != nil {
 			return
 		}
+		newConnect.id = connection.id
+		//fmt.Println("connection close recover success id: ", connection.id)
+		for i := 1; i <= s.ChannelNum; i++ {
+			_, chanErr := s.createChannel(newConnect, true)
+			if chanErr != nil {
+				fmt.Println("connection close create channel fail err: ", chanErr)
+				return
+			}
+		}
+		s.connections[connection.id] = newConnect
 		return
 	}
 }
 
 func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string, content *Content) (message interface{}, err error) {
-	/*
-		defer func() {
-			var errStr string
-			if p := recover(); p != nil {
-				errStr = fmt.Sprintf("internal error: %v\n", p)
-				failOnError(errors.New(errStr), "publish recover")
-				return
-			}
-		}()
-	*/
+	defer func() {
+		var errStr string
+		if p := recover(); p != nil {
+			errStr = fmt.Sprintf("internal error: %v\n", p)
+			err = errors.New(errStr)
+			util.FailOnError(err, "publish recover")
+		}
+	}()
 
 	channel, err := s.getChannel()
 
 	if err != nil {
-		failOnError(err, "channel no available ")
+		util.FailOnError(err, "channel no available ")
 		return nil, err
 	}
 
@@ -395,7 +377,7 @@ func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string,
 
 	_, err = s.DeclareQueue(channel.ch, queue)
 	if err != nil {
-		failOnError(err, "declare queue fail")
+		util.FailOnError(err, "declare queue fail")
 		return
 	}
 
@@ -405,13 +387,13 @@ func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string,
 		exchangeName = exchange.Name
 		err = s.DeclareExchange(channel.ch, exchange)
 		if err != nil {
-			failOnError(err, "declare exchange fail")
+			util.FailOnError(err, "declare exchange fail")
 			return
 		}
 
 		err = s.queueBind(channel.ch, queue.Name, exchange.Name, routeKey)
 		if err != nil {
-			failOnError(err, "queueBind fail")
+			util.FailOnError(err, "queueBind fail")
 			return
 		}
 	}
@@ -434,10 +416,10 @@ func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string,
 			if retry <= s.RetryCount { //消息推送失败 重试次数
 				retry++
 				time.Sleep(time.Millisecond * 50)
-				failOnError(err, "pool publish fail continue msg: ")
+				util.FailOnError(err, "pool publish fail continue msg: ")
 				continue
 			} else {
-				failOnError(err, "pool publish fail return msg: ")
+				util.FailOnError(err, "pool publish fail return msg: ")
 				return
 			}
 		}
@@ -446,7 +428,7 @@ func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string,
 		case returns := <-channel.notifyReturn:
 			if returns.ReplyCode != 0 {
 				err = errors.New(returns.ReplyText)
-				failOnError(err, "notifyReturn")
+				util.FailOnError(err, "notifyReturn")
 				return nil, err
 			}
 			return nil, nil
@@ -487,7 +469,7 @@ func (s *PoolService) DeclareQueue(channel *amqp.Channel, queue *Queue) (amqp.Qu
 	)
 
 	if err != nil {
-		failOnError(err, "queueDeclare fail")
+		util.FailOnError(err, "queueDeclare fail")
 		return q, err
 	}
 
