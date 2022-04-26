@@ -78,7 +78,9 @@ to quickly create a Cobra application.`,
 			numbers, _ := strconv.ParseInt(values.Get("num"), 10, 32)
 
 			for i := int64(1); i <= numbers; i++ {
-				_, _ = laravelPool.Publish("hello", content)
+				go func() {
+					_, _ = laravelPool.Publish("hello", content)
+				}()
 			}
 
 			writer.WriteHeader(200)

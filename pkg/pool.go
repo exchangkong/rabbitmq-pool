@@ -147,8 +147,8 @@ func (s *PoolService) createConnection(durable bool) (*connection, error) {
 		return nil, err
 	}
 
-	//s.mutex.Lock()
-	//defer s.mutex.Unlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 
 	s.connectMaxId++
 	connection.id = s.connectMaxId
@@ -174,8 +174,8 @@ func (s *PoolService) buildConnection(durable bool) (*connection, error) {
 
 func (s *PoolService) createChannel(connect *connection, durable bool) (*channel, error) {
 
-	//s.mutex.Lock()
-	//defer s.mutex.Unlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	var cha = new(channel)
 
 	cha.connectId = connect.id
@@ -301,6 +301,9 @@ func (s *PoolService) channelClose(channel *channel) {
 		s.mutex.Lock()
 		//fmt.Println("channel close wating lock")
 		defer s.mutex.Unlock()
+		if channel.durable == false {
+			return
+		}
 		//如果是持久的channel关闭后尝试重建channel
 		if _, ok := s.connections[channel.connectId]; ok && channel.durable && s.connections[channel.connectId].connect.IsClosed() == false {
 			_, channelErr := s.buildChannel(s.connections[channel.connectId], channel)
@@ -312,7 +315,7 @@ func (s *PoolService) channelClose(channel *channel) {
 		fmt.Println("channel close delete channel id: ", channel.id)
 		delete(s.channels, channel.id)
 		util.DeleteSlice(s.idleChannel, channel.id)
-		if channel.durable == false || err == nil {
+		if err == nil {
 			return
 		}
 
@@ -334,6 +337,9 @@ func (s *PoolService) connectionClose(connection *connection) {
 		err := <-connection.notifyClose
 		s.mutex.Lock()
 		defer s.mutex.Unlock()
+		if connection.durable == false {
+			return
+		}
 		if err != nil {
 			fmt.Printf("connection close Id: %d errCode: %d errReason: %s errSever: %t errRecover: %t \n",
 				connection.id,
@@ -345,22 +351,20 @@ func (s *PoolService) connectionClose(connection *connection) {
 		}
 		delete(s.connections, connection.id)
 		//如果是持久连接被关闭尝试重建
-		if connection.durable {
-			newConnect, connectErr := s.buildConnection(true)
-			//fmt.Println("connection close recover start id: ", connection.id)
-			if connectErr == nil {
-				newConnect.id = connection.id
-				//fmt.Println("connection close recover success id: ", connection.id)
-				for i := 1; i <= s.ChannelNum; i++ {
-					_, chanErr := s.createChannel(newConnect, true)
-					if chanErr != nil {
-						fmt.Println("connection close create channel fail err: ", chanErr)
-						return
-					}
+		newConnect, connectErr := s.buildConnection(true)
+		//fmt.Println("connection close recover start id: ", connection.id)
+		if connectErr == nil {
+			newConnect.id = connection.id
+			//fmt.Println("connection close recover success id: ", connection.id)
+			for i := 1; i <= s.ChannelNum; i++ {
+				_, chanErr := s.createChannel(newConnect, true)
+				if chanErr != nil {
+					fmt.Println("connection close create channel fail err: ", chanErr)
+					return
 				}
-				s.connections[connection.id] = newConnect
-				return
 			}
+			s.connections[connection.id] = newConnect
+			return
 		}
 		return
 	}
