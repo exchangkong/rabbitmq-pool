@@ -147,8 +147,8 @@ func (s *PoolService) createConnection(durable bool) (*connection, error) {
 		return nil, err
 	}
 
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	//s.mutex.Lock()
+	//defer s.mutex.Unlock()
 
 	s.connectMaxId++
 	connection.id = s.connectMaxId
@@ -174,8 +174,8 @@ func (s *PoolService) buildConnection(durable bool) (*connection, error) {
 
 func (s *PoolService) createChannel(connect *connection, durable bool) (*channel, error) {
 
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	//s.mutex.Lock()
+	//defer s.mutex.Unlock()
 	var cha = new(channel)
 
 	cha.connectId = connect.id
@@ -221,11 +221,16 @@ func (s *PoolService) buildChannel(connection *connection, cha *channel) (*chann
 func (s *PoolService) getChannel() (*channel, error) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
-	currentChannelNum := len(s.channels)
-	idleChannelCount := len(s.idleChannel)
+
+	for {
+		if len(s.idleChannel) > 0 || len(s.channels) < s.Options.MaxChannelNum {
+			break
+		}
+		time.Sleep(time.Nanosecond * 200)
+	}
 
 	//没有空闲channel并且当前最大channel数没有超过阈值
-	if idleChannelCount < 1 && currentChannelNum < s.Options.MaxChannelNum {
+	if len(s.idleChannel) < 1 && len(s.channels) < s.Options.MaxChannelNum {
 		var connection = new(connection)
 		var err error
 		for _, connect := range s.connections {
@@ -258,6 +263,7 @@ func (s *PoolService) getChannel() (*channel, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
+	//fmt.Println("get channel idleChannel 2: ", s.idleChannel)
 	channelId := s.idleChannel[0]
 	s.buysChannel = append(s.buysChannel, channelId)
 	s.idleChannel = util.DeleteSlice(s.idleChannel, channelId)
@@ -270,7 +276,9 @@ func (s *PoolService) backChannel(channel *channel) {
 		return
 	}
 
+	//fmt.Println("back channel start lock")
 	s.mutex.Lock()
+	//fmt.Println("back channel waiting lock")
 	defer s.mutex.Unlock()
 
 	s.buysChannel = util.DeleteSlice(s.buysChannel, channel.id)
@@ -278,19 +286,20 @@ func (s *PoolService) backChannel(channel *channel) {
 	if channel.durable == false { //如果是临时连接用完关闭 并踢出全局
 		_ = channel.ch.Close()
 		if _, ok := s.connections[channel.connectId]; ok && s.connections[channel.connectId].durable == false {
-			_ = s.connections[channel.connectId].connect.Close()
 			delete(s.connections, channel.connectId)
+			_ = s.connections[channel.connectId].connect.Close()
 		}
 	} else {
 		s.idleChannel = append(s.idleChannel, channel.id)
-		channel.ch.Close()
 	}
 }
 
 func (s *PoolService) channelClose(channel *channel) {
 	for {
 		err := <-channel.notifyClose
+		//fmt.Println("channel close start lock")
 		s.mutex.Lock()
+		//fmt.Println("channel close wating lock")
 		defer s.mutex.Unlock()
 		//如果是持久的channel关闭后尝试重建channel
 		if _, ok := s.connections[channel.connectId]; ok && channel.durable && s.connections[channel.connectId].connect.IsClosed() == false {
@@ -300,6 +309,7 @@ func (s *PoolService) channelClose(channel *channel) {
 			}
 		}
 
+		fmt.Println("channel close delete channel id: ", channel.id)
 		delete(s.channels, channel.id)
 		util.DeleteSlice(s.idleChannel, channel.id)
 		if channel.durable == false || err == nil {
@@ -322,16 +332,36 @@ func (s *PoolService) channelClose(channel *channel) {
 func (s *PoolService) connectionClose(connection *connection) {
 	for {
 		err := <-connection.notifyClose
-		if err == nil {
-			return
+		s.mutex.Lock()
+		defer s.mutex.Unlock()
+		if err != nil {
+			fmt.Printf("connection close Id: %d errCode: %d errReason: %s errSever: %t errRecover: %t \n",
+				connection.id,
+				err.Code,
+				err.Reason,
+				err.Server,
+				err.Recover,
+			)
 		}
-		fmt.Printf("connection close Id: %d errCode: %d errReason: %s errSever: %t errRecover: %t \n",
-			connection.id,
-			err.Code,
-			err.Reason,
-			err.Server,
-			err.Recover,
-		)
+		delete(s.connections, connection.id)
+		//如果是持久连接被关闭尝试重建
+		if connection.durable {
+			newConnect, connectErr := s.buildConnection(true)
+			//fmt.Println("connection close recover start id: ", connection.id)
+			if connectErr == nil {
+				newConnect.id = connection.id
+				//fmt.Println("connection close recover success id: ", connection.id)
+				for i := 1; i <= s.ChannelNum; i++ {
+					_, chanErr := s.createChannel(newConnect, true)
+					if chanErr != nil {
+						fmt.Println("connection close create channel fail err: ", chanErr)
+						return
+					}
+				}
+				s.connections[connection.id] = newConnect
+				return
+			}
+		}
 		return
 	}
 }

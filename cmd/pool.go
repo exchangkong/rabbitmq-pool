@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"git.yongche.com/rabbitmq-channel/pkg"
 	"github.com/fsnotify/fsnotify"
+	sync "github.com/sasha-s/go-deadlock"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/streadway/amqp"
@@ -27,6 +28,7 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 // poolCmd represents the pool command
@@ -40,6 +42,8 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// 检测超过 100 ms 的锁等待
+		sync.Opts.DeadlockTimeout = time.Millisecond * 1
 		opts := new(ApplicationOptions)
 		opts.Load()
 
@@ -74,9 +78,7 @@ to quickly create a Cobra application.`,
 			numbers, _ := strconv.ParseInt(values.Get("num"), 10, 32)
 
 			for i := int64(1); i <= numbers; i++ {
-				go func() {
-					_, _ = laravelPool.Publish("hello", content)
-				}()
+				_, _ = laravelPool.Publish("hello", content)
 			}
 
 			writer.WriteHeader(200)

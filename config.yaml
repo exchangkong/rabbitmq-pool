@@ -7,10 +7,10 @@ pool_option:
   port: 5672
   vhost: "hashrate"
   connect_num: 10
-  channel_num: 5
+  channel_num: 10
   retry_count: 5 #尝试重试5次push消息
   time_out: 5 #建议设置最小3秒
-  max_channel_num: 20 #全局可创建最多channel数量
+  max_channel_num: 200 #全局可创建最多channel数量
 
 grpc:
   host: '0.0.0.0'
