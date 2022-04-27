@@ -255,7 +255,7 @@ func (s *PoolService) getChannel() (*channel, error) {
 	defer s.mutex.Unlock()
 
 	channelId := s.idleChannel[0]
-	fmt.Println("get channel idleChannel 2: ", s.idleChannel, " id: ", channelId)
+	//fmt.Println("get channel idleChannel 2: ", s.idleChannel, " id: ", channelId)
 	s.idleChannel = util.DeleteSlice(s.idleChannel, channelId)
 
 	return s.channels[channelId], nil
