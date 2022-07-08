@@ -119,19 +119,6 @@ func (s *PoolService) init() {
 	}
 }
 
-/**
- * connection、channel健康检查
- */
-func (s *PoolService) poolKeepCheck() {
-	for {
-		for _, connection := range s.connections {
-			if connection.durable == false {
-				connection.connect.Close()
-			}
-		}
-	}
-}
-
 func (s *PoolService) createConnection(durable bool) (*connection, error) {
 	connection, err := s.buildConnection(durable)
 	if err != nil {
