@@ -75,7 +75,7 @@ func (l *LaravelPool) Publish(queueName string, content *Content) (msg interface
 	retry := 1
 
 	for {
-		msg, err = l.PoolService.Publish(queue, exchange, routeKey, content)
+		err = l.PoolService.Publish(queue, exchange, routeKey, content)
 		if err == nil {
 			break
 		}

@@ -354,7 +354,7 @@ func (s *PoolService) connectionClose(connection *connection) {
 	}
 }
 
-func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string, content *Content) (message interface{}, err error) {
+func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string, content *Content) (err error) {
 	defer func() {
 		var errStr string
 		if p := recover(); p != nil {
@@ -368,7 +368,7 @@ func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string,
 
 	if err != nil {
 		util.FailOnError(err, "channel no available ")
-		return nil, err
+		return err
 	}
 
 	defer func() {
@@ -429,17 +429,17 @@ func (s *PoolService) Publish(queue *Queue, exchange *Exchange, routeKey string,
 			if returns.ReplyCode != 0 {
 				err = errors.New(returns.ReplyText)
 				util.FailOnError(err, "notifyReturn")
-				return nil, err
+				return err
 			}
-			return nil, nil
+			return nil
 		case confirm := <-channel.notifyConfirm:
 			if confirm.Ack {
-				return "success", nil
+				return nil
 			}
-			return nil, errors.New("publish noAck")
+			return errors.New("publish noAck")
 
 		case <-time.After(time.Duration(s.TimeOut) * time.Second):
-			return nil, errors.New("time out ")
+			return errors.New("time out ")
 		}
 	}
 }
